@@ -15,6 +15,8 @@ public partial struct GoInGameClientSystem : ISystem
     [BurstCompile]
     public void OnCreate(ref SystemState state)
     {
+        state.RequireForUpdate<CubeSpawner>();
+
         var builder = new EntityQueryBuilder(Allocator.Temp)
             .WithAll<NetworkId>()
             .WithNone<NetworkStreamInGame>();
@@ -49,6 +51,8 @@ public partial struct GoInGameServerSystem : ISystem
     [BurstCompile]
     public void OnCreate(ref SystemState state)
     {
+        state.RequireForUpdate<CubeSpawner>();
+
         var builder = new EntityQueryBuilder(Allocator.Temp)
             .WithAll<GoInGameRequest>()
             .WithAll<ReceiveRpcCommandRequest>();
@@ -60,6 +64,9 @@ public partial struct GoInGameServerSystem : ISystem
     [BurstCompile]
     public void OnUpdate(ref SystemState state)
     {
+        var prefab = SystemAPI.GetSingleton<CubeSpawner>().Prefab;
+        state.EntityManager.GetName(prefab, out var prefabName);
+
         var worldName = state.WorldUnmanaged.Name;
 
         var commandBuffer = new EntityCommandBuffer(Allocator.Temp);
@@ -70,7 +77,12 @@ public partial struct GoInGameServerSystem : ISystem
             commandBuffer.AddComponent<NetworkStreamInGame>(req.ValueRO.SourceConnection);
 
             var networkId = _networkIdLookup[req.ValueRO.SourceConnection];
-            Debug.Log($"'{worldName}' settings connection '{networkId.Value}' to in game");
+            Debug.Log($"'{worldName}' settings connection '{networkId.Value}' to in game, spawning a Ghost '{prefabName}'");
+            var player = commandBuffer.Instantiate(prefab);
+            commandBuffer.SetComponent(player, new GhostOwner { NetworkId = networkId.Value });
+
+            // add player to the linked entity group so it gets destroyed when the connection is destroyed
+            commandBuffer.AppendToBuffer(req.ValueRO.SourceConnection, new LinkedEntityGroup { Value = player });
 
             commandBuffer.DestroyEntity(entity);
         }
